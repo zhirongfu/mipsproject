@@ -1,0 +1,209 @@
+.data
+# DONOTMODIFYTHISLINE
+frameBuffer:  .space 0x80000 # 512 wide X 256 high pixels
+w: 	.word 100
+h: 	.word 22
+l: 	.word 24
+bgcol: 	.word 0x00E6CC99
+# DONOTMODIFYTHISLINE
+# Your variables go BELOW here only (and above .text)
+flask:	.word 0
+liquid: .word 0
+.text
+lw $t0, bgcol
+sw $t0, liquid	#set liquid color to bgcol
+
+lbu $t0, bgcol + 2	#swap red and blue components
+sb $t0, liquid
+lbu $t0, bgcol
+sb $t0, liquid + 2
+
+lw $t0,bgcol
+srl $t3, $t0, 1	#divide bgcol by 2
+sw $t3, flask
+
+la $t1,frameBuffer
+li $t2,0
+loop:	#color background
+bge $t2,0x80000, endloop
+sw $t0,($t1)
+addi $t1,$t1,4
+addi $t2,$t2,4
+j loop
+endloop:
+
+lw $t0,w
+sub $t0,$t0,48
+srl $s0,$t0,1 #((w-48)/2)
+
+#center horizontally
+la $s1, frameBuffer
+li $t0,256
+sub $t0,$t0,30
+mul $t0,$t0,4
+add $s1,$s1, $t0 
+
+#center vertically
+addi $t0,$s0,64
+lw $t1,h
+add $t0,$t0,$t1
+lw $t1,l
+add $t0,$t0,$t1 #total length
+move $t6, $t0	#copy total height to t6
+#mid of length
+srl $t0,$t0,1 #div/2
+li $t1, 128   #half of screen
+sub $t0,$t1,$t0 #difference
+mul $t0,$t0,2048
+add $s1,$s1,$t0
+
+#error cases
+lw $t0, h
+lw $t1, l
+add $t0, $t0, $t1
+beq $t0, $zero, exit	#if both h and l are zero
+
+lw $t0, w
+sle $t7, $t0, 60	#if flask width is less than equal to cap width
+lw $t0, w	#if width is not an even number, flask cannot be centered horizontally
+sll $t0, $t0, 0x1F      
+srl $t0, $t0, 0x1F
+or $t7, $t7, $t0
+lw $t0, w
+sgt $t0, $t0, 512	#if width is greater than 512
+or $t7, $t7, $t0
+sgt $t0, $t6, 256	#if total length is greater than 256
+or $t7, $t7, $t0
+move $t0, $t6	#if total height is not an even number, flask cannot be centered vertically
+sll $t0, $t0, 0x1F      
+srl $t0, $t0, 0x1F
+or $t7, $t7, $t0
+
+#if there is an error, exit
+bne $t7, $zero, exit	
+
+#blue cap
+move $a0,$s1 #blue cap initial address
+li $a1, 60
+li $a2, 32
+li $a3, 0x000000ff
+jal rectangle
+
+#move the initial pointer
+li $t0,32 
+mul $t0,$t0,2048
+add $t0,$t0,24
+add $s1,$s1,$t0
+#first rectangle
+move $a0,$s1
+li $a1, 48
+li $a2, 32
+lw $a3, flask
+jal rectangle
+#move the initial pointer
+li $t0,32 
+mul $t0,$t0,2048
+add $s1,$s1,$t0
+#second rectangle
+move $s6,$s1
+move $a0,$s1
+li $a1, 48
+move $a2, $s0
+lw $a3, flask
+jal rectangle
+#move the initial pointer
+move $t0, $s0 
+mul $t0,$t0,2048
+add $s1,$s1,$t0
+mul $t0,$s0,4
+sub $s1,$s1,$t0
+#third rectangle
+move $a0,$s1
+add $a1,$s0,$s0
+add $a1,$a1, 48
+lw  $a2, h
+lw $a3, flask
+jal rectangle
+#move the initial pointer
+lw $t0, h
+mul $t0,$t0,2048
+add $s1,$s1,$t0
+#liquid
+move $a0,$s1
+add $a1,$s0,$s0
+add $a1,$a1, 48
+lw  $a2, l
+lw $a3, liquid
+jal rectangle
+#triangle left
+add $a0,$s6,192 #42*4
+move $a1, $s0
+lw $a2, flask
+li $a3, 1
+jal triangle
+#triangle right
+move $a0,$s6
+move $a1,$s0
+lw $a2, flask
+li $a3, -1
+jal triangle
+j exit 
+
+rectangle:
+#$a0=initial address
+#$a1=width
+#$a2=length
+#$a3=color
+li $t0,0 #row
+move $t2,$a0 #start address
+mul $t3,$a1,4
+retangle1:
+bge $t0,$a2,bloop1
+li $t1,0 #col
+retangle2:
+bge $t1,$a1,bloop2
+sw $a3,($t2)
+addi  $t2,$t2,4
+addi $t1,$t1,1
+j retangle2
+bloop2:
+add $t2,$t2,2048
+sub $t2,$t2,$t3
+addi $t0,$t0,1
+j retangle1
+bloop1:				
+jr $ra 
+triangle:
+#$a0=start address
+#$a1=base
+#$a2=color
+#$a3= slope	
+li $t0,0 #row
+li $t4,1 #col
+	
+move $t2,$a0 #start address
+mul $t3,$a1,4
+triangle1:
+bge $t0,$a1,brtriangle1
+li $t1,0 
+triangle2:
+bge $t1,$t4,brtriangle2
+sw $a2,($t2)			
+mul $t9 ,$a3, 4
+add $t2,$t2, $t9
+addi $t1,$t1,1
+j triangle2
+brtriangle2:	
+add $t2,$t2,2048
+mul $t7,$t4,4
+mul $t9 ,$a3,$t7
+sub $t2,$t2,$t9	
+add $t4,$t4,1
+addi $t0,$t0,1
+j triangle1
+brtriangle1:				
+jr $ra 	
+#exit
+exit:
+li $v0,10
+syscall
